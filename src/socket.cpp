@@ -7,6 +7,9 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 
+#define MAX_TIMEOUT_TIMES 10
+int Timeout_times;//超时重传次数
+
 server::server(const std::string& port) {
     std::memset(&address, 0, sizeof(address));
     address.sin_family = AF_INET;
@@ -153,6 +156,7 @@ int clientLink::dataRecv() {
     if (recvBytes < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             std::cerr << "Connection is Timeout" << std::endl;
+            Timeout_times++;
             acceptOk();
             return TIMEOUT;
         }//超时重传
@@ -160,6 +164,8 @@ int clientLink::dataRecv() {
         error("recvfrom error", RECV_ERROR);
         exit(RECV_ERROR);
     }
+
+    Timeout_times = 0;
 
 
     const unsigned short operation = static_cast<unsigned char>(ntohs(*reinterpret_cast<unsigned short *>(recvBuffer)));
@@ -178,7 +184,6 @@ int clientLink::dataRecv() {
     fileHandle.write(recvBuffer + 4, recvBytes - 4);
 
     acceptOk();
-
 
     return static_cast<int>(recvBytes);
 }//接受数据包并发送ack
@@ -202,12 +207,15 @@ int clientLink::dataPack(const std::string &data) {
         if (recvBytes < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 std::cerr << "Connection is Timeout" << std::endl;
+
+                Timeout_times++;
                 continue;
             }//超时重传
             perror("recvfrom");
             error("recvfrom error", RECV_ERROR);
             exit(RECV_ERROR);//错误处理
         }
+        Timeout_times = 0;
         if (recvBytes != 4) {
             std::cerr << "ack bytes is error." << std::endl;
             continue; //继续接受ack
@@ -272,9 +280,4 @@ void clientLink::errorHandle() const {
     const std::string errorMessage = recvBuffer + 4;
     std::cerr << errorMessage << std::endl;
     exit (CLIENT_ERROR);
-}
-
-
-void clientLink::sendACK() {
-
 }

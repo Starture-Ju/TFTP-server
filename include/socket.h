@@ -91,7 +91,6 @@ public:
 
     int dataPack(const std::string &data);//发送数据包并接受ACK
     int dataRecv();//接受文件数据包并发送ACK
-    void sendACK();//确保对面收到
     void acceptOk();//发送ACK
     void error(const std::string& message, unsigned short errorCode);//发送error包
     void errorHandle() const;//处理接受到的error包

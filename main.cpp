@@ -24,7 +24,7 @@ int main(int argc, [[maybe_unused]]char *argv[]) {
      fd_set rset;                //每次传给 select 的读位图
      int maxfd = serverTFTP.getSock();
      timeval timeout = { .tv_sec = 1, .tv_usec = 0 };
-    //设置超时时间1s
+    //设置select()超时时间1s
 
      /*-------------------------事件循环 --------------------- */
      while (true) {
