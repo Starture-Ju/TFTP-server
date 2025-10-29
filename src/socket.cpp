@@ -5,7 +5,6 @@
 #include <socket.h>
 #include <cstring>
 #include <sys/time.h>
-//#include <sys/select.h>
 #include <arpa/inet.h>
 
 server::server(const std::string& port) {
@@ -27,13 +26,6 @@ server::server(const std::string& port) {
         perror("socket");
         std::exit(SOCKET_ERROR);
     }
-    timeval tv{};
-    tv.tv_sec  = ESTIME_INIT_S;
-    tv.tv_usec = ESTIME_INIT_MS;
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-        perror("setsockopt SO_RCVTIMEO");
-        exit(SOCKET_ERROR);
-    }
 
     if (bind(sock, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == -1) {
         perror("bind");
@@ -54,16 +46,16 @@ std::string server::getServerIpByStr() const {
     return ret;
 }
 
-clientLink::clientLink(const server &serv) {
-    sock = serv.getSock();//获取服务器套接字
+clientLink::clientLink(const server &serv): myServer(std::to_string(0)) {
+    int sock = serv.getSock(); //获取服务器套接字
     //阻塞性地进行套接字监听
-    long recvBytes = recvfrom(sock, buffer, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), &clientAddrLen);
+    long recvBytes = recvfrom(sock, recvBuffer, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), &clientAddrLen);
 
     if (recvBytes == BUFFERSIZE) {
-        error("Buffer overflow: Data should be less than 2048 bytes.\n", BUFFEROVERFLOW);//数据包太大导致缓冲区溢出
+        error("Buffer overflow: Data should be less than 2048 bytes.\n", BUFFEROVERFLOW); //数据包太大导致缓冲区溢出
         while (recvBytes != 0) {
-            recvBytes = recvfrom(sock, buffer, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), &clientAddrLen);
-        }//清空套接字
+            recvBytes = recvfrom(sock, recvBuffer, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), &clientAddrLen);
+        } //清空套接字
         exit(BUFFEROVERFLOW);
     }
 
@@ -71,11 +63,11 @@ clientLink::clientLink(const server &serv) {
         perror("recvfrom");
         error("recvfrom error", RECV_ERROR);
         exit(RECV_ERROR);
-    }//外层使用select轮询
+    } //外层使用select轮询
 
     //数据包解析
-    reqType = static_cast<unsigned char>(buffer[1]);
-    char *filePointer = buffer + 2;
+    reqType = static_cast<requestType>(ntohs(*reinterpret_cast<unsigned short *>(recvBuffer)));//解析前两个字节
+    char *filePointer = recvBuffer + 2;
     fileName = std::string(filePointer);
     if (fileName.empty()) {
         error("File name is empty.\n", DATA_TYPEERROR);
@@ -102,6 +94,9 @@ clientLink::clientLink(const server &serv) {
             error("Invalid transmod.\n", DATA_TYPEERROR);
             exit(DATA_TYPEERROR);
         }
+        if (!fileHandle.is_open()) {
+            error("There was no file: " + fileName, FILE_NOT_FOUND);
+        }
     } else if (reqType == WRQ) {
         if (transMod == "netascii") {
             fileHandle.open(fileName, std::ios::out | std::ios::app);
@@ -111,46 +106,23 @@ clientLink::clientLink(const server &serv) {
             error("Invalid reqType.\n", DATA_TYPEERROR);
             exit(DATA_TYPEERROR);
         }
+    } else { //未被定义的行为，不予理睬
+        exit(DATA_TYPEERROR);
     }
 
-
-
-    //构建成功，构建服务端socket
-    std::memset(&serverAddress, 0, sizeof(serverAddress));
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_addr.s_addr = INADDR_ANY;
-
-
-    //将字符串转换成int类型
-    char *endptr = nullptr;
-    serverAddress.sin_port = htons(0);
-    if (*endptr != 0) {
-        std::cerr << "Invalid port number" << std::endl;
-        std::exit(PORT_ERROR);
-    }
-
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock == -1) {
-        perror("socket");
-        std::exit(SOCKET_ERROR);
-    }
+    //构建成功，配置服务端socket
     timeval tv{};
-    tv.tv_sec  = ESTIME_INIT_S;
+    tv.tv_sec = ESTIME_INIT_S;
     tv.tv_usec = ESTIME_INIT_MS;
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+    if (setsockopt(myServer.getSock(), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
         perror("setsockopt SO_RCVTIMEO");
         exit(SOCKET_ERROR);
-    }
-
-    if (bind(sock, reinterpret_cast<sockaddr *>(&serverAddress), sizeof(serverAddress)) == -1) {
-        perror("bind");
-        std::exit(BIND_ERROR);
-    }
+    } //设置超时时间
 }
 
 clientLink::~clientLink() {
-    std::cout << "A client has been linked:" << getClientIpByStr() << ":" << std::to_string(getPort()) << std::endl;
-}
+    std::cout << "A client has been linked:" << getClientIpByStr() << ":" << std::to_string(getPort()) << " on the port: " << myServer.getPort() << std::endl;
+}//父进程输出链接信息
 
 unsigned short clientLink::getPort() const { return ntohs(address.sin_port); }
 unsigned int clientLink::getClientIp() const { return ntohl(address.sin_addr.s_addr); }
@@ -159,7 +131,7 @@ std::string clientLink::getClientIpByStr() const {
     inet_ntop(AF_INET, &address.sin_addr, buffer, INET6_ADDRSTRLEN);
     auto ret = std::string(buffer);
     return ret;
-}
+}//获取点分十进制的ip
 unsigned short clientLink::getReqType() const { return reqType; }
 std::string clientLink::getTransMod() const { return transMod; }
 
@@ -167,11 +139,11 @@ std::string clientLink::getTransMod() const { return transMod; }
 
 
 int clientLink::dataRecv() {
-    long recvBytes = recvfrom(sock, buffer, BUFFERSIZE, 0, nullptr, nullptr);
+    long recvBytes = recvfrom(myServer.getSock(), recvBuffer, BUFFERSIZE, 0, nullptr, nullptr);
     if (recvBytes == BUFFERSIZE) {
         error("Buffer overflow: Data should be less than 2048 bytes.\n", BUFFEROVERFLOW);
         while (recvBytes != 0) {
-            recvBytes = recvfrom(sock, buffer, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), &clientAddrLen);
+            recvBytes = recvfrom(myServer.getSock(), recvBuffer, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), &clientAddrLen);
         }//清空套接字
         exit(BUFFEROVERFLOW);
     }
@@ -188,32 +160,29 @@ int clientLink::dataRecv() {
     }
 
 
-    unsigned short operation = static_cast<unsigned char>(buffer[1]);
+    const unsigned short operation = static_cast<unsigned char>(ntohs(*reinterpret_cast<unsigned short *>(recvBuffer)));
+    const unsigned short blockNumber = ntohs(*reinterpret_cast<const unsigned short *>(recvBuffer + 2));
+    //提取数据头
+    if (operation == ERROR) errorHandle();
     if (operation != DATA) {
-        error("Invalid operation.\n", DATA_TYPEERROR);
-        exit(DATA_TYPEERROR);
+        return TO_BE_RESENT;//可能是第一个请求包被重传
     }
-    auto blockNumberPointer = reinterpret_cast<const unsigned short *>(buffer + 2);
-    const unsigned short blockNumber = ntohs(*blockNumberPointer);
     if (blockNumber != seq + 1) {
-        error("Block number is Out Of Order.\nThe next Data should be " + std::to_string(seq + 1) + ".\n", DATA_TYPEERROR);
-        exit(DATA_TYPEERROR);
+        return TO_BE_RESENT;//乱序重传ack
     }
     seq++;//处理完后序号自增
-    fileHandle.write(buffer + 4, recvBytes - 4);
+    fileHandle.write(recvBuffer + 4, recvBytes - 4);
     acceptOk();
     return static_cast<int>(recvBytes);
 }//接受数据包并发送ack
 
-int clientLink::dataPack(std::string &data) {
-    buffer[0] = 0;
-    buffer[1] = 3;
-    auto blockNumberPointer = reinterpret_cast<unsigned short *>(buffer + 2);
-    *blockNumberPointer = htons(seq + 1);
-    char *dataPointer = buffer + 4;
-    std::memcpy(dataPointer, data.c_str(), data.length() + 1);
-    int sendBytes = 4 + data.length() + 1;
-    long realSent = sendto(sock, buffer, sendBytes, 0, reinterpret_cast<sockaddr *>(&address), sizeof(address));
+int clientLink::dataPack(const std::string &data) {
+    *reinterpret_cast<unsigned short *>(sendBuffer) = htons(DATA);
+    *reinterpret_cast<unsigned short *>(sendBuffer + 2) = htons(seq + 1);
+    char *dataPointer = sendBuffer + 4;
+    std::memcpy(dataPointer, data.c_str(), data.length());
+    int sendBytes = static_cast<int>(data.length()) + 4;
+    long realSent = sendto(myServer.getSock(), sendBuffer, sendBytes, 0, reinterpret_cast<sockaddr *>(&address), sizeof(address));
     if (sendBytes != realSent) {
         std::cerr << "sendto() error: " << "the sent bytes is error" << std::endl;
         perror("sendto");
@@ -221,8 +190,8 @@ int clientLink::dataPack(std::string &data) {
     }
     int ack_flag = false;
 
-    while (ack_flag == false) {
-        long recvBytes = recvfrom(sock, buffer, BUFFERSIZE, 0, nullptr, nullptr);
+    while (ack_flag == false) {//接受ack
+        long recvBytes = recvfrom(myServer.getSock(), recvBuffer, BUFFERSIZE, 0, nullptr, nullptr);
         if (recvBytes < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 std::cerr << "Connection is Timeout" << std::endl;
@@ -235,11 +204,11 @@ int clientLink::dataPack(std::string &data) {
         }
         if (recvBytes != 4) {
             std::cerr << "ack bytes is error." << std::endl;
-            error("ack is error.", RECV_ERROR);
-            exit(RECV_ERROR);
+            continue; //继续接受ack
         }
-        unsigned short operation = static_cast<unsigned char>(buffer[1]);
-        unsigned short blockNumber = htons(*blockNumberPointer);
+        unsigned short operation = ntohs(*reinterpret_cast<unsigned short *>(recvBuffer));
+        unsigned short blockNumber = htons(*reinterpret_cast<unsigned short *>(recvBuffer + 2));
+        if (operation == ERROR) errorHandle();
         if (operation != ACK) {
             std::cerr << "Invalid operation." << std::endl;
             continue;
@@ -256,23 +225,20 @@ int clientLink::dataPack(std::string &data) {
 
 void clientLink::acceptOk() {
     char ack[BUFFERSIZE] = {};
-    auto operationPointer = reinterpret_cast<unsigned short *>(buffer);
-    auto blockNumberPointer = reinterpret_cast<unsigned short *>(buffer + 2);
-    *operationPointer = htons(ACK);
-    *blockNumberPointer = htons(seq + 1);
+    *reinterpret_cast<unsigned short *>(sendBuffer) = htons(ACK);
+    *reinterpret_cast<unsigned short *>(sendBuffer + 2) = htons(seq + 1);
     //封装ack
-    sendto(sock, ack, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), 4);
+    sendto(myServer.getSock(), ack, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), 4);
 }
 
 void clientLink::error(const std::string& message, unsigned short errorCode) {
     char errorMessage[BUFFERSIZE] = {};
-    auto operationPointer = reinterpret_cast<unsigned short *>(errorMessage);
-    auto errorCodePointer = reinterpret_cast<unsigned short *>(errorMessage + 2);
-    auto messagePointer = errorMessage + 4;
-    std::memcpy(messagePointer, message.c_str(), message.length() + 1);
-    *operationPointer = htons(ERROR);
-    *errorCodePointer = htons(errorCode);
-    sendto(sock, errorMessage, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), 4);
+    *reinterpret_cast<unsigned short *>(errorMessage) = htons(ERROR);
+    *reinterpret_cast<unsigned short *>(errorMessage + 2) = htons(errorCode);
+    std::memcpy(errorMessage + 4, message.c_str(), message.length() + 1);
+    //封装error包
+
+    sendto(myServer.getSock(), errorMessage, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), 4);
 }
 
 int clientLink::dataProc() {
@@ -293,4 +259,11 @@ int clientLink::dataProc() {
         }
     }
     return 0;
+}
+
+
+void clientLink::errorHandle() const {
+    const std::string errorMessage = recvBuffer + 4;
+    std::cerr << errorMessage << std::endl;
+    exit (CLIENT_ERROR);
 }

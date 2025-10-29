@@ -5,7 +5,7 @@
 #ifndef PROCESS_H
 #define PROCESS_H
 #include <unistd.h>
-#include <socket.h>
+#define PROCESS_MAXCOUNT 128
 
 class process {
     pid_t pid = 0;

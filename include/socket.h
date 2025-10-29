@@ -10,7 +10,7 @@
 #include <string>
 #include <fstream>
 
-#define TIMEOUT -5
+#define TIMEOUT (-5)
 #define SOCKET_ERROR 1
 #define BIND_ERROR 2
 #define ACCEPT_ERROR 4
@@ -24,26 +24,30 @@
 #define BUFFEROVERFLOW 9
 #define RECV_ERROR 10
 #define SEND_ERROR 11
+#define TO_BE_RESENT 12
+#define CLIENT_ERROR 13
+#define FILE_NOT_FOUND 14
 
 
 #define ESTIME_INIT_S 0
 #define ESTIME_INIT_MS 100 //100ms
 
-//type
-#define RRQ 1
-#define WRQ 2
-#define DATA 3
-#define ACK 4
-#define ERROR 5
 
+enum requestType {
+    RRQ,
+    WRQ,
+    DATA,
+    ACK,
+    ERROR
+};
 
 class server {
     int sock = 0;
     unsigned short port = 0;
     sockaddr_in address{};
 public:
-    explicit server(const std::string& port);//构造函数
-    server(server &&other) = default;//复制函数
+    explicit server(const std::string& port);
+    server(server &&other) = default;
 
     ~server() = default;
     server &operator = (server &&other) = default;
@@ -54,21 +58,20 @@ public:
     [[nodiscard]] unsigned int getServerIp() const;
     [[nodiscard]] std::string getServerIpByStr() const;
 
-};
+};//主进程服务器
 
 class clientLink {
-    int sock = 0;//新服务器套接字
-    sockaddr_in serverAddress{};
-    socklen_t serverAddressLen = 0;
-
+    server myServer;//与客户端交互的端口
     socklen_t clientAddrLen = 0;
     sockaddr_in address{};//客户端地址结构
     int seq = 0;//当前要发送的包序号
 
-    unsigned short reqType = 0;//连接请求的类型（RRQ/WRQ）
+    requestType reqType;//连接请求的类型（RRQ/WRQ）
     std::string fileName;
     std::string transMod;
-    char buffer[BUFFERSIZE] = {};
+
+    char sendBuffer[BUFFERSIZE] = {};
+    char recvBuffer[BUFFERSIZE] = {};
 
     std::fstream fileHandle;
 public:
@@ -85,11 +88,11 @@ public:
     [[nodiscard]] unsigned short getReqType() const;
     [[nodiscard]] std::string getTransMod() const;
 
-    int dataPack(std::string &data);//发送数据包并接受ACK
+    int dataPack(const std::string &data);//发送数据包并接受ACK
     int dataRecv();//接受文件数据包并发送ACK
-    void acceptOk();
+    void acceptOk();//发送ACK
     void error(const std::string& message, unsigned short errorCode);//发送error包
-
+    void errorHandle() const;//处理接受到的error包
 
     int dataProc();
 };//将所有的io处理封装为一个链接类
