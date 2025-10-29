@@ -21,15 +21,13 @@ int main(int argc, [[maybe_unused]]char *argv[]) {
     process::listenForChildProcess();
     std::cout << "TFTP server is running on " + serverTFTP.getServerIpByStr() + ":" + port << std::endl;
 
-    bool endFlag = false;
-
      fd_set rset;                //每次传给 select 的读位图
      int maxfd = serverTFTP.getSock();
      timeval timeout = { .tv_sec = 1, .tv_usec = 0 };
     //设置超时时间1s
 
      /*-------------------------事件循环 --------------------- */
-     while (!endFlag) {
+     while (true) {
          FD_ZERO(&rset);         //清空位图
          FD_SET(serverTFTP.getSock(), &rset);   //把 UDP 套接字塞进去
 
@@ -51,17 +49,16 @@ int main(int argc, [[maybe_unused]]char *argv[]) {
              }
 
          }
-         while (std::cin.peek() != EOF) { //当输入exit\n时终止程序
+         if (kbhit()) { //当输入exit\n时终止程序
              std::string input;
              std::getline(std::cin, input);
              if (input == "exit") {
-                 endFlag = true;
                  break;
              }
          }
      }
     // 等待sigaction()销毁所有子进程
-    while (now_process_count >= 0) {
+    while (now_process_count > 0) {
         now_process_count--;
         now_process_count++;//为了让IDE不犯病的举动，没有其他意义
         sleep(10);

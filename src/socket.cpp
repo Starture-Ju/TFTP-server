@@ -106,6 +106,8 @@ clientLink::clientLink(const server &serv): myServer(std::to_string(0)) {
             error("Invalid reqType.\n", DATA_TYPEERROR);
             exit(DATA_TYPEERROR);
         }
+        seq--;//ACK从0开始
+        acceptOk();
     } else { //未被定义的行为，不予理睬
         exit(DATA_TYPEERROR);
     }
@@ -121,7 +123,7 @@ clientLink::clientLink(const server &serv): myServer(std::to_string(0)) {
 }
 
 clientLink::~clientLink() {
-    std::cout << "A client has been linked:" << getClientIpByStr() << ":" << std::to_string(getPort()) << " on the port: " << myServer.getPort() << std::endl;
+    std::cout << "A client has been linked:" << getClientIpByStr() << ":" << std::to_string(getPort()) << std::endl;
 }//父进程输出链接信息
 
 unsigned short clientLink::getPort() const { return ntohs(address.sin_port); }
@@ -139,7 +141,7 @@ std::string clientLink::getTransMod() const { return transMod; }
 
 
 int clientLink::dataRecv() {
-    long recvBytes = recvfrom(myServer.getSock(), recvBuffer, BUFFERSIZE, 0, nullptr, nullptr);
+    long recvBytes = recvfrom(myServer.getSock(), recvBuffer, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), &clientAddrLen);
     if (recvBytes == BUFFERSIZE) {
         error("Buffer overflow: Data should be less than 2048 bytes.\n", BUFFEROVERFLOW);
         while (recvBytes != 0) {
@@ -165,14 +167,19 @@ int clientLink::dataRecv() {
     //提取数据头
     if (operation == ERROR) errorHandle();
     if (operation != DATA) {
+        acceptOk();
         return TO_BE_RESENT;//可能是第一个请求包被重传
     }
+    seq++;//接受完ack后序号自增
     if (blockNumber != seq + 1) {
+        acceptOk();
         return TO_BE_RESENT;//乱序重传ack
     }
-    seq++;//处理完后序号自增
     fileHandle.write(recvBuffer + 4, recvBytes - 4);
+
     acceptOk();
+
+
     return static_cast<int>(recvBytes);
 }//接受数据包并发送ack
 
@@ -195,7 +202,6 @@ int clientLink::dataPack(const std::string &data) {
         if (recvBytes < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 std::cerr << "Connection is Timeout" << std::endl;
-                acceptOk();
                 continue;
             }//超时重传
             perror("recvfrom");
@@ -214,8 +220,7 @@ int clientLink::dataPack(const std::string &data) {
             continue;
         }
         if (blockNumber != seq + 1) {
-            std::cerr << "Block number is Out Of Order." << std::endl;
-            continue;
+            return SEND_ERROR;//重传
         }
         seq++;
         ack_flag = true;
@@ -225,10 +230,10 @@ int clientLink::dataPack(const std::string &data) {
 
 void clientLink::acceptOk() {
     char ack[BUFFERSIZE] = {};
-    *reinterpret_cast<unsigned short *>(sendBuffer) = htons(ACK);
-    *reinterpret_cast<unsigned short *>(sendBuffer + 2) = htons(seq + 1);
+    *reinterpret_cast<unsigned short *>(ack) = htons(ACK);
+    *reinterpret_cast<unsigned short *>(ack + 2) = htons(seq + 1);
     //封装ack
-    sendto(myServer.getSock(), ack, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), 4);
+    sendto(myServer.getSock(), ack, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), clientAddrLen);
 }
 
 void clientLink::error(const std::string& message, unsigned short errorCode) {
@@ -248,13 +253,14 @@ int clientLink::dataProc() {
         while (!endFlag) {
             std::memset(buf, 0, BUFFERSIZE);
             fileHandle.read(buf, MAX_DATA_SIZE);
-            if (fileHandle.gcount() < 0) endFlag = true;
+            if (fileHandle.gcount() < MAX_DATA_SIZE) endFlag = true;
             std::string data(buf);
-            dataPack(data);
+            while (dataPack(data) == SEND_ERROR);//错误重传
         }
     } else if (reqType == WRQ) {
         while (true) {
             int recvBytes = dataRecv();
+            while (recvBytes == TIMEOUT || recvBytes == TO_BE_RESENT) recvBytes = dataRecv();
             if (recvBytes < 512) break;
         }
     }
@@ -266,4 +272,9 @@ void clientLink::errorHandle() const {
     const std::string errorMessage = recvBuffer + 4;
     std::cerr << errorMessage << std::endl;
     exit (CLIENT_ERROR);
+}
+
+
+void clientLink::sendACK() {
+
 }

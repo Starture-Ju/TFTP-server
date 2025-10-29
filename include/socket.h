@@ -11,6 +11,7 @@
 #include <fstream>
 
 #define TIMEOUT (-5)
+#define TO_BE_RESENT (-4)
 #define SOCKET_ERROR 1
 #define BIND_ERROR 2
 #define ACCEPT_ERROR 4
@@ -24,7 +25,7 @@
 #define BUFFEROVERFLOW 9
 #define RECV_ERROR 10
 #define SEND_ERROR 11
-#define TO_BE_RESENT 12
+
 #define CLIENT_ERROR 13
 #define FILE_NOT_FOUND 14
 
@@ -34,7 +35,7 @@
 
 
 enum requestType {
-    RRQ,
+    RRQ = 1,
     WRQ,
     DATA,
     ACK,
@@ -62,8 +63,8 @@ public:
 
 class clientLink {
     server myServer;//与客户端交互的端口
-    socklen_t clientAddrLen = 0;
     sockaddr_in address{};//客户端地址结构
+    socklen_t clientAddrLen = sizeof(address);
     int seq = 0;//当前要发送的包序号
 
     requestType reqType;//连接请求的类型（RRQ/WRQ）
@@ -90,6 +91,7 @@ public:
 
     int dataPack(const std::string &data);//发送数据包并接受ACK
     int dataRecv();//接受文件数据包并发送ACK
+    void sendACK();//确保对面收到
     void acceptOk();//发送ACK
     void error(const std::string& message, unsigned short errorCode);//发送error包
     void errorHandle() const;//处理接受到的error包

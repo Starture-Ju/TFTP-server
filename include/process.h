@@ -22,4 +22,6 @@ public:
 
 };
 
+bool kbhit(); //判断stdin是否为空
+
 #endif //PROCESS_H

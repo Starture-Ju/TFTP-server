@@ -41,3 +41,12 @@ void process::listenForChildProcess() {
     act.sa_flags = 0;
     sigaction(SIGCHLD, &act, nullptr);
 }//使用sigaction自动监听子程序的返回
+
+
+bool kbhit() {                 // AI给出的不阻塞地检查缓冲区方案
+    fd_set rfds;
+    FD_ZERO(&rfds);
+    FD_SET(STDIN_FILENO, &rfds);
+    timeval tv{0, 0};          // 立即返回
+    return select(STDIN_FILENO + 1, &rfds, nullptr, nullptr, &tv) > 0;
+}
