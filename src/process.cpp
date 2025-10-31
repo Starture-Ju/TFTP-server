@@ -9,14 +9,19 @@
 #include <iostream>
 #include <bits/ostream.tcc>
 
-int now_process_count;
+volatile sig_atomic_t now_process_count;
 
 void process::childProcDestroyed([[maybe_unused]] int sig){
     int status;
-    waitpid(-1, &status, WNOHANG);
-    if (!WIFEXITED(status)) perror("waitpid");
-    now_process_count--;
-}//暂时不做更多情况的进程处理
+    pid_t pid;
+    // 循环调用 waitpid，非阻塞地清理所有已终止的子进程
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        // 只有在子进程真正退出或被信号终止时才减少计数
+        if (WIFEXITED(status) || WIFSIGNALED(status)) {
+            now_process_count--;
+        }
+    }
+}
 
 
 process::process() {
@@ -27,7 +32,11 @@ process::process() {
         sleep(10);//等待sigaction()处理子进程
     }
     pid = fork();
-    now_process_count++;
+    if (pid > 0) {
+        now_process_count++;
+    } else if (pid < 0) {
+        perror("fork failed");
+    }
 }
 
 int process::getPid() const { return pid; }

@@ -8,6 +8,8 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 add_executable(TFTP_Server main.cpp
         src/socket.cpp
         src/process.cpp
+        include/logWrite.h
+        src/logWrite.cpp
 )
 
 

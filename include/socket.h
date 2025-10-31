@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <string>
 #include <fstream>
+#include <logWrite.h>
 
 #define TIMEOUT (-5)
 #define TO_BE_RESENT (-4)
@@ -19,7 +20,7 @@
 #define PORT_ERROR 6
 #define SELECT_ERROR 7
 #define BUFFERSIZE 2048
-#define MAX_DATA_SIZE 508
+#define MAX_DATA_SIZE 512
 
 #define DATA_TYPEERROR 8
 #define BUFFEROVERFLOW 9
@@ -32,6 +33,24 @@
 
 #define ESTIME_INIT_S 0
 #define ESTIME_INIT_MS 100 //100ms
+
+
+
+
+#define LOGFILE_PATH "./logfile.txt"
+
+enum errorType {
+    NotDefined,
+    FileNotFound,
+    AccessViolation,
+    DiskFull,
+    IllegalOperation,
+    UnknownId,
+    FileExists,
+    NoSuchUser
+};
+
+
 
 
 enum requestType {
@@ -59,9 +78,11 @@ public:
     [[nodiscard]] unsigned int getServerIp() const;
     [[nodiscard]] std::string getServerIpByStr() const;
 
+    static void serverLog(logLevel level, const std::string& msg);
+
 };//主进程服务器
 
-class clientLink {
+class clientLink : logWrite{
     server myServer;//与客户端交互的端口
     sockaddr_in address{};//客户端地址结构
     socklen_t clientAddrLen = sizeof(address);
@@ -75,11 +96,12 @@ class clientLink {
     char recvBuffer[BUFFERSIZE] = {};
 
     std::fstream fileHandle;
+    void logConstructor(std::string path) override;
 public:
     explicit clientLink(const server &serv);
-    clientLink(clientLink &&other)  noexcept = default;
-    ~clientLink();// try: 尝试在父进程对象销毁时显示连接信息
-    clientLink &operator = (clientLink &&other) = default;
+    clientLink(clientLink &&other)  noexcept = delete;
+    ~clientLink() override;// 在父进程对象销毁时显示连接信息
+    clientLink &operator = (clientLink &&other) noexcept = delete;
 
 
 
@@ -92,7 +114,7 @@ public:
     int dataPack(const std::string &data);//发送数据包并接受ACK
     int dataRecv();//接受文件数据包并发送ACK
     void acceptOk();//发送ACK
-    void error(const std::string& message, unsigned short errorCode);//发送error包
+    void error(const std::string& errorMsg, errorType errorCode);//发送error包
     void errorHandle() const;//处理接受到的error包
 
     int dataProc();
