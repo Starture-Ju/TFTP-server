@@ -195,6 +195,7 @@ int clientLink::dataRecv() {
         while (recvBytes != 0) {
             recvBytes = recvfrom(myServer.getSock(), recvBuffer, BUFFERSIZE, 0, reinterpret_cast<sockaddr *>(&address), &clientAddrLen);
         }//清空套接字
+        std::system(("rm -f" + fileName).c_str());//删除该文件
         std::exit(BUFFEROVERFLOW);
     }
 
@@ -205,6 +206,7 @@ int clientLink::dataRecv() {
             if (Timeout_times >= MAX_TIMEOUT_TIMES) {
                 error("Connection is Timeout.", NotDefined);
                 logGenerate(logLevel::error, "Connection is Timeout.");
+                std::system(("rm -f" + fileName).c_str());//删除该文件
                 std::exit(TIMEOUT);
             }
             acceptOk();
@@ -213,6 +215,7 @@ int clientLink::dataRecv() {
         perror("recvfrom");
         error("recvfrom error", NotDefined);
         logGenerate(logLevel::error, "recvfrom error.");
+        std::system(("rm -f" + fileName).c_str());//删除该文件
         std::exit(RECV_ERROR);
     }
     transferBytes += recvBytes;
